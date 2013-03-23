@@ -13,10 +13,12 @@ import javax.ws.rs._
 import javax.servlet.ServletConfig
 
 import scala.collection.mutable.LinkedHashMap
+import scala.collection.mutable.LinkedHashSet
 import scala.collection.JavaConverters._
+import collection.mutable
 
 object ApiListingResource {
-  var _cache: Option[LinkedHashMap[String, Class[_]]] = None
+  var _cache: Option[LinkedHashMap[String, LinkedHashSet[Class[_]]]] = None
 
   def routes(
     app: Application,
@@ -28,7 +30,7 @@ object ApiListingResource {
       case Some(cache) => cache
       case None => {
         val resources = app.getClasses().asScala ++ app.getSingletons().asScala.map(ref => ref.getClass)
-        val cache = new LinkedHashMap[String, Class[_]]
+        val cache = new LinkedHashMap[String, LinkedHashSet[Class[_]]]
         resources.foreach(resource => {
           resource.getAnnotation(classOf[Api]) match {
             case ep: Annotation => {
@@ -36,7 +38,13 @@ object ApiListingResource {
                 case true => ep.value.substring(1)
                 case false => ep.value
               }
-              cache += path -> resource
+              if (!cache.contains(path)) {
+                cache += path -> new mutable.LinkedHashSet[Class[_]]
+              }
+              cache.get(path) match {
+                case Some(s) => s += resource
+                case _ =>
+              }
             }
             case _ => 
           }
@@ -67,7 +75,7 @@ class ApiListing {
     val apis = (for(route <- routes.map(m => m._1)) yield {
       docForRoute(route, app, sc, headers, uriInfo) match {
         case Some(doc) if(doc.getApis !=null && doc.getApis.size > 0) => {
-          Some(new DocumentationEndPoint(listingRoot + JaxrsApiReader.FORMAT_STRING + doc.resourcePath, ""))
+          Some(new DocumentationEndPoint(listingRoot + JaxrsApiReader.FORMAT_STRING + doc.resourcePath, doc.getApis.get(0).description))
         }
         case _ => None
       }
@@ -116,8 +124,23 @@ class ApiListing {
 
     routes.contains(route) match {
       case true => {
-        val cls = routes(route)
-        cls.getAnnotation(classOf[Api]) match {
+        val clses = routes(route)
+        val currentApiEndPoint = clses.head.getAnnotation(classOf[Api])
+        val apiPath = currentApiEndPoint.value
+        val apiListingPath = currentApiEndPoint.value
+        val doc = new HelpApi(apiFilterClassName).filterDocs(
+          JaxrsApiReader.read(clses, apiVersion, swaggerVersion, basePath, apiPath),
+          headers,
+          uriInfo,
+          apiListingPath,
+          apiPath)
+
+        doc.basePath = basePath
+        doc.apiVersion = apiVersion
+        doc.swaggerVersion = swaggerVersion
+        Some(doc)
+
+        /*cls.getAnnotation(classOf[Api]) match {
           case currentApiEndPoint: Annotation => {
             val apiPath = currentApiEndPoint.value
             val apiListingPath = currentApiEndPoint.value
@@ -133,7 +156,7 @@ class ApiListing {
             Some(doc)
           }
           case _ => None
-        }
+        } */
       }
       case _ => None
     }

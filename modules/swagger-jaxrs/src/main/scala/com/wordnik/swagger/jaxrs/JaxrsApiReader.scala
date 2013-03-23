@@ -34,7 +34,7 @@ import java.lang.annotation.Annotation
 import javax.xml.bind.annotation._
 
 import scala.collection.JavaConversions._
-import collection.mutable.ListBuffer
+import collection.mutable._
 
 object JaxrsApiReader {
   var endpointCacheEnabled = true
@@ -43,7 +43,7 @@ object JaxrsApiReader {
   var FORMAT_STRING = ".{format}"
   val LIST_RESOURCES_PATH = "/resources"
 
-  private val endpointsCache = scala.collection.mutable.Map.empty[Class[_], Documentation]
+  private val endpointsCache = scala.collection.mutable.Map.empty[LinkedHashSet[Class[_]], Documentation]
 
   def setFormatString(str: String) = {
     LOGGER.debug("setting format string")
@@ -54,14 +54,14 @@ object JaxrsApiReader {
     }
   }
 
-  def read(hostClass: Class[_], apiVersion: String, swaggerVersion: String, basePath: String, apiPath: String): Documentation = {
+  def read(hostClasses: LinkedHashSet[Class[_]], apiVersion: String, swaggerVersion: String, basePath: String, apiPath: String): Documentation = {
     LOGGER.debug("reading path " + apiPath)
 
-    endpointsCache.get(hostClass) match {
+    endpointsCache.get(hostClasses) match {
       case None => {
-        val doc = new JaxrsApiSpecParser(hostClass, apiVersion, swaggerVersion, basePath, apiPath).parse
+        val doc = new JaxrsApiSpecParser(hostClasses, apiVersion, swaggerVersion, basePath, apiPath).parse
         if(endpointCacheEnabled)
-          endpointsCache += hostClass -> doc.clone.asInstanceOf[Documentation]
+          endpointsCache += hostClasses -> doc.clone.asInstanceOf[Documentation]
         doc
       }
       case doc: Option[Documentation] => doc.get.clone.asInstanceOf[Documentation]
@@ -70,20 +70,20 @@ object JaxrsApiReader {
   }
 }
 
-class JaxrsApiSpecParser(val _hostClass: Class[_], _apiVersion: String, _swaggerVersion: String, _basePath: String, _resourcePath: String)
+class JaxrsApiSpecParser(val _hostClasses: LinkedHashSet[Class[_]], _apiVersion: String, _swaggerVersion: String, _basePath: String, _resourcePath: String)
   extends ApiSpecParserTrait {
   private val LOGGER = LoggerFactory.getLogger(classOf[JaxrsApiSpecParser])
 
-  override def hostClass = _hostClass
+  override def hostClasses = _hostClasses
   override def apiVersion = _apiVersion
   override def swaggerVersion = _swaggerVersion
   override def basePath = _basePath
   override def resourcePath = _resourcePath
 
-  LOGGER.debug(hostClass + ", apiVersion: " + apiVersion + ", swaggerVersion: " + swaggerVersion + ", basePath: " + basePath + ", resourcePath: " + resourcePath)
+  LOGGER.debug(hostClasses + ", apiVersion: " + apiVersion + ", swaggerVersion: " + swaggerVersion + ", basePath: " + basePath + ", resourcePath: " + resourcePath)
 
   val documentation = new Documentation
-  val apiEndpoint = hostClass.getAnnotation(classOf[Api])
+  val apiEndpoint = hostClasses.head.getAnnotation(classOf[Api])
 
   override def processParamAnnotations(docParam: DocumentationParameter, paramAnnotations: Array[Annotation], method: Method): Boolean = {
     var ignoreParam = false
@@ -122,9 +122,19 @@ class JaxrsApiSpecParser(val _hostClass: Class[_], _apiVersion: String, _swagger
     ignoreParam
   }
 
-  override def getPath(method: Method): String = {
+  override def getPath(method: Method, hostClass: Class[_]): String = {
     val wsPath = method.getAnnotation(classOf[javax.ws.rs.Path])
-    val path = apiEndpoint.value + JaxrsApiReader.FORMAT_STRING + (if (wsPath == null) "" else wsPath.value)
+    val contextPath = hostClass.getAnnotation(classOf[javax.ws.rs.Path]) match {
+      case pan : javax.ws.rs.Path => {
+        if (pan.value.equals("/")) {
+          ""
+        } else {
+          pan.value
+        }
+      }
+      case _ => ""
+    }
+    val path = contextPath + JaxrsApiReader.FORMAT_STRING + (if (wsPath == null) "" else wsPath.value)
     path
   }
 

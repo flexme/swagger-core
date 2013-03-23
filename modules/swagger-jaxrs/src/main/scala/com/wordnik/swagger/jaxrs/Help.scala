@@ -29,6 +29,7 @@ import javax.ws.rs.core.Response.Status
 import javax.servlet.ServletConfig
 
 import scala.collection.JavaConversions._
+import collection.mutable
 
 @deprecated
 trait Help {
@@ -68,8 +69,10 @@ trait Help {
           SwaggerContext.loadClass(currentApiEndPoint.listingClass)
         } else this.getClass
       }
+      var classes = new mutable.LinkedHashSet[Class[_]];
+      classes += listingClass;
       val docs = new HelpApi(apiFilterClassName).filterDocs(
-        JaxrsApiReader.read(listingClass, apiVersion, swaggerVersion, basePath, apiPath),
+        JaxrsApiReader.read(classes, apiVersion, swaggerVersion, basePath, apiPath),
         headers,
         uriInfo,
         apiListingPath,

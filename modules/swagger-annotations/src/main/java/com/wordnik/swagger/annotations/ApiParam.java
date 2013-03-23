@@ -33,6 +33,8 @@ public @interface ApiParam {
     /** Default value  - if e.g. no JAX-RS @DefaultValue is given */
     String defaultValue() default "";
 
+    String dataType() default "";
+
     /** Description of values this endpoint accepts */
     String allowableValues() default "";
     boolean required() default false;

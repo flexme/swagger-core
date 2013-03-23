@@ -148,7 +148,7 @@ class DocumentationOperation(
 
   @XmlElement
   def getParameters(): java.util.List[DocumentationParameter] = parameters.size match {
-    case 0 => null
+    case 0 => parameters
     case _ => parameters
   }
 

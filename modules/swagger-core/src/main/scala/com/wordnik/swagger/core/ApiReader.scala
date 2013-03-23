@@ -29,7 +29,7 @@ import java.lang.annotation.Annotation
 import javax.xml.bind.annotation._
 
 import scala.collection.JavaConversions._
-import collection.mutable.ListBuffer
+import collection.mutable.{LinkedHashSet, ListBuffer}
 
 object ApiMethodType {
   val GET = "GET"
@@ -42,14 +42,14 @@ object ApiMethodType {
 trait ApiSpecParserTrait extends BaseApiParser {
   private val LOGGER = LoggerFactory.getLogger(classOf[ApiSpecParserTrait])
 
-  def hostClass: Class[_]
+  def hostClasses: LinkedHashSet[Class[_]]
   def documentation: Documentation
   def apiEndpoint: Api
   def apiVersion: String
   def swaggerVersion: String
   def basePath: String
   def resourcePath: String
-  def getPath(method: Method): String
+  def getPath(method: Method, hostClass: Class[_]): String
   def processParamAnnotations(docParam: DocumentationParameter, paramAnnotations: Array[Annotation], method: Method): Boolean
 
   val TRAIT = "trait"
@@ -58,8 +58,11 @@ trait ApiSpecParserTrait extends BaseApiParser {
   def parseHttpMethod(method: Method, apiOperation: ApiOperation): String
 
   def parse(): Documentation = {
-    if (apiEndpoint != null)
-      hostClass.getMethods.foreach(method => parseMethod(method))
+    if (apiEndpoint != null) {
+      for (hostClass <- hostClasses) {
+        hostClass.getMethods.foreach(method => parseMethod(method, hostClass))
+      }
+    }
     documentation.apiVersion = apiVersion
     documentation.swaggerVersion = swaggerVersion
     documentation.basePath = basePath
@@ -71,6 +74,7 @@ trait ApiSpecParserTrait extends BaseApiParser {
     docParam.name = readString(apiParam.name, docParam.name)
     docParam.description = readString(apiParam.value)
     docParam.defaultValue = readString(apiParam.defaultValue)
+    docParam.dataType = readString(docParam.dataType, apiParam.dataType)
     try {
       docParam.allowableValues = convertToAllowableValues(apiParam.allowableValues)
     } catch {
@@ -85,7 +89,7 @@ trait ApiSpecParserTrait extends BaseApiParser {
   }
 
   private val ListRegex: scala.util.matching.Regex = """List\[(.*?)\]""".r
-  def parseMethod(method: Method): Any = {
+  def parseMethod(method: Method, hostClass: Class[_]): Any = {
     val apiOperation = method.getAnnotation(classOf[ApiOperation])
     val apiErrors = method.getAnnotation(classOf[ApiErrors])
     val isDeprecated = method.getAnnotation(classOf[Deprecated])
@@ -205,7 +209,7 @@ trait ApiSpecParserTrait extends BaseApiParser {
       })
 
       // Get Endpoint
-      val docEndpoint = getEndPoint(documentation, getPath(method))
+      val docEndpoint = getEndPoint(documentation, getPath(method, hostClass))
 
       // Add Operation to Endpoint
       docEndpoint.addOperation(processOperation(method, docOperation))
